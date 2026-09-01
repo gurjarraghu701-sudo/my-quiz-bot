@@ -11,7 +11,7 @@ from telebot import types
 from docx import Document
 
 # 1. अपना BOT TOKEN और Telegram USER ID यहाँ डालें
-TOKEN = "8813747977:AAGzH-xGM0wrEnxALh160g6gr9e-fVPCjE0"  # BotFather वाला टोकन
+TOKEN = os.environ.get("BOT_TOKEN")
 OWNER_ID = 8183824919           # आपकी न्यूमेरिक Telegram User ID
 
 bot = telebot.TeleBot(TOKEN)
