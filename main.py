@@ -10,16 +10,27 @@ import telebot
 from telebot import types
 from docx import Document
 
-# 1. अपना BOT TOKEN और Telegram USER ID यहाँ डालें
+# ==========================================
+# 1. कॉन्फ़िगरेशन एवं सुरक्षा (Security)
+# ==========================================
 TOKEN = os.environ.get("BOT_TOKEN")
-OWNER_ID = 8183824919           # आपकी न्यूमेरिक Telegram User ID
+OWNER_ID = 8183824919
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
+# Cron-job.org के लिए हल्का (Lightweight) रिस्पॉन्स
+# इससे 'Response data too big' वाला एरर कभी नहीं आएगा
+@app.route('/')
+def home():
+    return "OK", 200
+
+
+# ==========================================
+# 2. SQLite डेटाबेस मैनेजमेंट
+# ==========================================
 DB_FILE = "quiz_database.db"
 
-# 데이터बेस Initialization (SQLite)
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -37,7 +48,6 @@ def init_db():
 
 init_db()
 
-# DB Helper Functions
 def save_quiz_to_db(title, questions, timer):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -91,23 +101,24 @@ def delete_quiz_from_db(quiz_id):
     conn.close()
     return deleted
 
-# टेंपरेरी अपलोड डेटा
+
+# Global State Trackers
 pending_uploads = {}
 leaderboards = {}
 poll_tracker = {}
 
-@app.route('/')
-def home():
-    return "Multi-Quiz Server is Live 24/7!"
 
+# ==========================================
+# 3. स्टार्ट कमांड्स एवं हेल्प मैसेज
+# ==========================================
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     if message.chat.type == 'private':
         bot.reply_to(
             message, 
             "🏁 **नमस्ते! मैं आपका Multi-Quiz Bot हूँ।**\n\n"
-            "📌 **कमांड्स:**\n"
-            "• मुझे कोई भी `.docx` फ़ाइल यहाँ DM में भेजकर सेव करें।\n"
+            "📌 **उपयोग कैसे करें:**\n"
+            "• मुझे कोई भी `.docx` फ़ाइल यहाँ DM में भेजकर क्विज़ सेव करें।\n"
             "• `/myquizzes` - अपनी सभी सेव की हुई क्विज़ देखें।\n"
             "• `/deletequiz ID` - कोई क्विज़ डिलीट करें (उदा: `/deletequiz 1`)\n"
             "• ग्रुप में क्विज़ चलाने के लिए ग्रुप में `/startquiz` लिखें।"
@@ -115,7 +126,10 @@ def send_welcome(message):
     else:
         bot.reply_to(message, "नमस्ते! ग्रुप में क्विज़ शुरू करने के लिए ऑनर `/startquiz` लिखें।")
 
-# फ़ाइल से प्रश्न और उत्तर निकालना
+
+# ==========================================
+# 4. Docx Parsing एवं फ़ाइल हैंडलिंग
+# ==========================================
 def parse_quiz_text(text):
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     quizzes = []
@@ -160,7 +174,6 @@ def parse_quiz_text(text):
         
     return quizzes
 
-# DM में फ़ाइल अपलोड स्वीकार करना
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
     if message.chat.type != 'private':
@@ -193,7 +206,6 @@ def handle_docs(message):
                 'quizzes': quizzes
             }
 
-            # टाइमर पूछना
             markup = types.InlineKeyboardMarkup()
             btn15 = types.InlineKeyboardButton("⏱️ 15 सेकंड", callback_data="save_timer_15")
             btn20 = types.InlineKeyboardButton("⏱️ 20 सेकंड", callback_data="save_timer_20")
@@ -214,7 +226,6 @@ def handle_docs(message):
     except Exception as e:
         bot.reply_to(message, f"त्रुटि: {str(e)}")
 
-# टाइमर चुनकर सेव करना
 @bot.callback_query_handler(func=lambda call: call.data.startswith('save_timer_'))
 def save_timer_callback(call):
     if call.from_user.id != OWNER_ID:
@@ -241,7 +252,10 @@ def save_timer_callback(call):
     else:
         bot.answer_callback_query(call.id, "⚠️ क्विज़ डेटा नहीं मिला।", show_alert=True)
 
-# अपनी सभी सेव की हुई क्विज़ देखना
+
+# ==========================================
+# 5. क्विज़ प्रबंधन कमांड्स (List & Delete)
+# ==========================================
 @bot.message_handler(commands=['myquizzes'])
 def list_my_quizzes(message):
     if message.from_user.id != OWNER_ID:
@@ -260,7 +274,6 @@ def list_my_quizzes(message):
     text += "💡 **डिलीट करने के लिए:** `/deletequiz ID` लिखें।"
     bot.reply_to(message, text, parse_mode="Markdown")
 
-# क्विज़ डिलीट करना
 @bot.message_handler(commands=['deletequiz'])
 def delete_quiz_cmd(message):
     if message.from_user.id != OWNER_ID:
@@ -277,7 +290,10 @@ def delete_quiz_cmd(message):
     else:
         bot.reply_to(message, f"❌ Quiz ID `{q_id}` नहीं मिला।")
 
-# ग्रुप में `/startquiz` से लिस्ट दिखाना या direct start करना
+
+# ==========================================
+# 6. ग्रुप क्विज़ निष्पादन (Group Execution)
+# ==========================================
 @bot.message_handler(commands=['startquiz'])
 def start_quiz_in_group(message):
     chat_id = message.chat.id
@@ -291,7 +307,6 @@ def start_quiz_in_group(message):
         bot.reply_to(message, "❌ केवल बॉट ऑनर ही क्विज़ प्रतियोगिता शुरू कर सकता है!")
         return
 
-    # ऑनर के एडमिन होने की जाँच
     try:
         member = bot.get_chat_member(chat_id, OWNER_ID)
         if member.status not in ['administrator', 'creator']:
@@ -303,7 +318,6 @@ def start_quiz_in_group(message):
 
     parts = message.text.split()
     
-    # अगर डायरेक्ट ID दी गई है (उदा: /startquiz 2)
     if len(parts) > 1 and parts[1].isdigit():
         q_id = int(parts[1])
         quiz_data = get_quiz_by_id(q_id)
@@ -313,7 +327,6 @@ def start_quiz_in_group(message):
             bot.reply_to(message, f"❌ Quiz ID `{q_id}` नहीं मिला। `/myquizzes` करके सही ID देखें।")
         return
 
-    # अगर केवल /startquiz लिखा है तो सेव्ड क्विज़ की लिस्ट बटन के रूप में दिखाएं
     quizzes = get_all_quizzes()
     if not quizzes:
         bot.reply_to(message, "📭 कोई सेव्ड क्विज़ नहीं मिला! पहले बॉट के DM में `.docx` फ़ाइल भेजें।")
@@ -331,7 +344,6 @@ def start_quiz_in_group(message):
         parse_mode="Markdown"
     )
 
-# बटन दबाकर क्विज़ शुरू करना
 @bot.callback_query_handler(func=lambda call: call.data.startswith('launch_'))
 def launch_quiz_callback(call):
     if call.from_user.id != OWNER_ID:
@@ -352,7 +364,6 @@ def launch_quiz_callback(call):
     else:
         bot.answer_callback_query(call.id, "❌ क्विज़ नहीं मिला।", show_alert=True)
 
-# क्विज़ चालू करने का फ़ंक्शन
 def launch_quiz(chat_id, quiz_data):
     quizzes = quiz_data['questions']
     timer_val = quiz_data['timer']
@@ -370,7 +381,6 @@ def launch_quiz(chat_id, quiz_data):
 
     threading.Thread(target=run_quiz_competition, args=(chat_id, quizzes, timer_val, title)).start()
 
-# प्रश्नों को टाइमर के साथ भेजना
 def run_quiz_competition(chat_id, quizzes, timer_val, title):
     leaderboards[chat_id] = {}
     total_q = len(quizzes)
@@ -402,7 +412,6 @@ def run_quiz_competition(chat_id, quizzes, timer_val, title):
 
     send_final_leaderboard(chat_id, total_q, title)
 
-# उत्तर ट्रैक करना
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
     poll_id = poll_answer.poll_id
@@ -426,33 +435,45 @@ def handle_poll_answer(poll_answer):
         if selected_option == correct_id:
             leaderboards[chat_id][user_id]['score'] += 1
 
-# अंतिम लीडरबोर्ड
+
+# ==========================================
+# 7. परिणाम एवं भक्ति संदेश (Final Results)
+# ==========================================
 def send_final_leaderboard(chat_id, total_questions, title):
     scores = leaderboards.get(chat_id, {})
     
+    # 1. ग्रुप में केवल यह संदेश जाएगा
+    try:
+        bot.send_message(chat_id, "करह बिहारी सरकार की जय")
+    except Exception as e:
+        print(f"Group Message Error: {e}")
+
+    # 2. लीडरबोर्ड (अंतिम परिणाम) तैयार करना
     if not scores:
         lb_text = f"🏁 **क्विज़ समाप्त! (`{title}`)**\n\nकिसी भी सदस्य ने उत्तर नहीं दिया।"
     else:
         sorted_scores = sorted(scores.values(), key=lambda x: x['score'], reverse=True)
-        
         lb_text = f"🏁 **क्विज़ समाप्त! (`{title}`)** 🏁\n\n🏆 **लीडरबोर्ड (अंतिम परिणाम):**\n\n"
         medals = ["🥇", "🥈", "🥉"]
         for i, p in enumerate(sorted_scores):
             rank = medals[i] if i < 3 else f"{i+1}."
             lb_text += f"{rank} **{p['name']}** — {p['score']}/{total_questions} सही उत्तर\n"
 
-    bot.send_message(chat_id, lb_text, parse_mode="Markdown")
-    
+    # 3. पूरा रिजल्ट केवल आपके (ऑनर के) पर्सनल DM में भेजा जाएगा
     try:
         group_info = bot.get_chat(chat_id)
-        admin_report = f"📊 **प्रतियोगिता रिपोर्ट**\n👥 **ग्रुप:** {group_info.title}\n\n" + lb_text
+        admin_report = f"📊 **क्विज़ परिणाम रिपोर्ट**\n👥 **ग्रुप:** {group_info.title}\n\n" + lb_text
         bot.send_message(OWNER_ID, admin_report, parse_mode="Markdown")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"DM Send Error: {e}")
         
     if chat_id in leaderboards:
         del leaderboards[chat_id]
 
+
+# ==========================================
+# 8. सर्वर एवं बॉट निष्पादन (Execution)
+# ==========================================
 def run_telegram_bot():
     bot.infinity_polling(skip_pending=True)
 
