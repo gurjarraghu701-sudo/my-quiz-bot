@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 python-docx
-flask
+Flask
+reportlab
