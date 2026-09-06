@@ -10,6 +10,12 @@ import telebot
 from telebot import types
 from docx import Document
 
+# ReportLab libraries for exact PDF styling
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
 # ==========================================
 # 1. कॉन्फ़िगरेशन एवं सुरक्षा (Security)
 # ==========================================
@@ -19,15 +25,14 @@ OWNER_ID = 8183824919
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# Cron-job.org के लिए हल्का (Lightweight) रिस्पॉन्स
-# इससे 'Response data too big' वाला एरर कभी नहीं आएगा
+# Cron-job.org के लिए 200 OK रिस्पॉन्स
 @app.route('/')
 def home():
     return "OK", 200
 
 
 # ==========================================
-# 2. SQLite डेटाबेस मैनेजमेंट
+# 2. SQLite डेटाबेस मैनेजमेंट (Persistent Storage)
 # ==========================================
 DB_FILE = "quiz_database.db"
 
@@ -106,6 +111,7 @@ def delete_quiz_from_db(quiz_id):
 pending_uploads = {}
 leaderboards = {}
 poll_tracker = {}
+group_quiz_messages = {}  # केवल ग्रुप मैसेजेस डिलीट करने के लिए Tracker
 
 
 # ==========================================
@@ -286,7 +292,7 @@ def delete_quiz_cmd(message):
 
     q_id = int(parts[1])
     if delete_quiz_from_db(q_id):
-        bot.reply_to(message, f"✅ Quiz ID `{q_id}` सफलतापूर्वक डिलीट कर दिया गया।")
+        bot.reply_to(message, f"✅ Quiz ID `{q_id}` सफलतापूर्वक बॉट से डिलीट कर दिया गया।")
     else:
         bot.reply_to(message, f"❌ Quiz ID `{q_id}` नहीं मिला।")
 
@@ -369,7 +375,7 @@ def launch_quiz(chat_id, quiz_data):
     timer_val = quiz_data['timer']
     title = quiz_data['title']
 
-    bot.send_message(
+    intro_msg = bot.send_message(
         chat_id, 
         f"🏁 **क्विज़ प्रतियोगिता चालू!**\n\n"
         f"📖 **विषय:** `{title}`\n"
@@ -379,26 +385,34 @@ def launch_quiz(chat_id, quiz_data):
         parse_mode="Markdown"
     )
 
+    group_quiz_messages[chat_id] = [intro_msg.message_id]
     threading.Thread(target=run_quiz_competition, args=(chat_id, quizzes, timer_val, title)).start()
 
 def run_quiz_competition(chat_id, quizzes, timer_val, title):
     leaderboards[chat_id] = {}
     total_q = len(quizzes)
+    start_time = time.time()
     
     time.sleep(5)
     
     for idx, q in enumerate(quizzes, start=1):
         q_text = f"[{idx}/{total_q}] {q['question']}"
         try:
+            # Explanation में मांगी गई लाइन
             poll_msg = bot.send_poll(
                 chat_id=chat_id,
                 question=q_text[:300],
                 options=q['options'],
                 type='quiz',
                 correct_option_id=q['correct_id'],
+                explanation="करह बिहारी सरकार की जय 🙏",
                 open_period=timer_val,
                 is_anonymous=False
             )
+            
+            # ऑटो-डिलीट के लिए केवल इस ग्रुप मैसेजेस की ID रिकॉर्ड करें
+            if chat_id in group_quiz_messages:
+                group_quiz_messages[chat_id].append(poll_msg.message_id)
             
             poll_tracker[poll_msg.poll.id] = {
                 'chat_id': chat_id,
@@ -410,7 +424,8 @@ def run_quiz_competition(chat_id, quizzes, timer_val, title):
             print(f"Poll Error: {e}")
             time.sleep(2)
 
-    send_final_leaderboard(chat_id, total_q, title)
+    total_time_spent = int(time.time() - start_time)
+    send_final_leaderboard(chat_id, total_q, title, total_time_spent)
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
@@ -430,55 +445,144 @@ def handle_poll_answer(poll_answer):
             leaderboards[chat_id] = {}
             
         if user_id not in leaderboards[chat_id]:
-            leaderboards[chat_id][user_id] = {'name': user_name, 'score': 0}
+            leaderboards[chat_id][user_id] = {
+                'name': user_name, 
+                'attempted': 0,
+                'correct': 0, 
+                'wrong': 0
+            }
             
+        leaderboards[chat_id][user_id]['attempted'] += 1
         if selected_option == correct_id:
-            leaderboards[chat_id][user_id]['score'] += 1
+            leaderboards[chat_id][user_id]['correct'] += 1
+        else:
+            leaderboards[chat_id][user_id]['wrong'] += 1
 
 
 # ==========================================
-# 7. परिणाम एवं भक्ति संदेश (Final Results)
+# 7. PDF रिपब्लिक जेनरेशन (Exact Layout & Colors)
 # ==========================================
-def send_final_leaderboard(chat_id, total_questions, title):
+def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=A4, 
+        rightMargin=15, 
+        leftMargin=15, 
+        topMargin=20, 
+        bottomMargin=20
+    )
+    story = []
+    
+    styles = getSampleStyleSheet()
+    
+    # Exact Headers matching sample PDF[cite: 1]
+    title_style = ParagraphStyle(
+        'HeaderTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=15,
+        alignment=1,
+        textColor=colors.HexColor('#8B0000'),
+        spaceAfter=4
+    )
+    
+    sub_title_style = ParagraphStyle(
+        'SubHeaderTitle',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        alignment=1,
+        textColor=colors.HexColor('#0A2540'),
+        spaceAfter=12
+    )
+
+    story.append(Paragraph("॥ करह बिहारी सरकार की जय ॥", title_style))
+    story.append(Paragraph("CONSOLIDATED TEST RESULT & RANK LIST", sub_title_style))
+    
+    # Header Details Section[cite: 1]
+    meta_data = [
+        [f"Test Name:\n{title}", f"Total Candidates:\n{len(scores)} Students"],
+        [f"Max Marks:\n{total_q * 2.0:.1f} Marks ({total_q} Qs)", "Negative Marking:\n1/4 (0.25)"]
+    ]
+    meta_table = Table(meta_data, colWidths=[280, 280])
+    meta_table.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 8.5),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#1A1A1A')),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 10))
+    
+    # Exact Columns from reference PDF[cite: 1]
+    table_data = [[
+        'Rank', 'Roll No / ID', 'Student Name', 'Attempted', 
+        'Correct', 'Wrong', 'Neg. Marks (1/4)', 'Total Score', 'Percentile', 'Time Spent'
+    ]]
+    
+    sorted_scores = sorted(
+        scores.values(), 
+        key=lambda x: (x['correct'] * 2.0) - (x['wrong'] * 0.5), 
+        reverse=True
+    )
+    
+    total_candidates = len(sorted_scores) if len(sorted_scores) > 0 else 1
+    time_str = f"{total_time_spent // 60}m {total_time_spent % 60:02d}s"
+    
+    for rank, p in enumerate(sorted_scores, start=1):
+        attempted = p['attempted']
+        correct = p['correct']
+        wrong = p['wrong']
+        neg_marks = wrong * 0.5
+        total_score = (correct * 2.0) - neg_marks
+        percentile = round(((total_candidates - rank + 1) / total_candidates) * 100, 2)
+        
+        table_data.append([
+            str(rank),
+            f"STU-2026-{rank:03d}",
+            p['name'][:18],
+            str(attempted),
+            str(correct),
+            str(wrong),
+            f"-{neg_marks:.2f}",
+            f"{total_score:.2f}",
+            f"{percentile:.2f}%",
+            time_str
+        ])
+        
+    # PDF Table Styling matching sample colors (Dark Blue Header + Alternating Rows)[cite: 1]
+    result_table = Table(table_data, colWidths=[32, 72, 95, 52, 42, 40, 70, 58, 55, 52])
+    result_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002B49')), # Dark Blue Header
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 7.5),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.4, colors.HexColor('#D3D3D3')),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8F9FA')])
+    ]))
+    
+    story.append(result_table)
+    doc.build(story)
+    
+    buffer.seek(0)
+    return buffer
+
+
+# ==========================================
+# 8. ऑटो-डिलीट (केवल ग्रुप से) और रिजल्ट भेजना
+# ==========================================
+def delete_group_quiz_messages(chat_id, message_ids):
+    time.sleep(60)  # क्विज़ समाप्त होने के ठीक 60 सेकंड बाद
+    for msg_id in message_ids:
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception as e:
+            print(f"Group Auto-Delete Error: {e}")
+
+def send_final_leaderboard(chat_id, total_questions, title, total_time_spent):
     scores = leaderboards.get(chat_id, {})
     
-    # 1. ग्रुप में केवल यह संदेश जाएगा
-    try:
-        bot.send_message(chat_id, "करह बिहारी सरकार की जय")
-    except Exception as e:
-        print(f"Group Message Error: {e}")
-
-    # 2. लीडरबोर्ड (अंतिम परिणाम) तैयार करना
-    if not scores:
-        lb_text = f"🏁 **क्विज़ समाप्त! (`{title}`)**\n\nकिसी भी सदस्य ने उत्तर नहीं दिया।"
-    else:
-        sorted_scores = sorted(scores.values(), key=lambda x: x['score'], reverse=True)
-        lb_text = f"🏁 **क्विज़ समाप्त! (`{title}`)** 🏁\n\n🏆 **लीडरबोर्ड (अंतिम परिणाम):**\n\n"
-        medals = ["🥇", "🥈", "🥉"]
-        for i, p in enumerate(sorted_scores):
-            rank = medals[i] if i < 3 else f"{i+1}."
-            lb_text += f"{rank} **{p['name']}** — {p['score']}/{total_questions} सही उत्तर\n"
-
-    # 3. पूरा रिजल्ट केवल आपके (ऑनर के) पर्सनल DM में भेजा जाएगा
-    try:
-        group_info = bot.get_chat(chat_id)
-        admin_report = f"📊 **क्विज़ परिणाम रिपोर्ट**\n👥 **ग्रुप:** {group_info.title}\n\n" + lb_text
-        bot.send_message(OWNER_ID, admin_report, parse_mode="Markdown")
-    except Exception as e:
-        print(f"DM Send Error: {e}")
-        
-    if chat_id in leaderboards:
-        del leaderboards[chat_id]
-
-
-# ==========================================
-# 8. सर्वर एवं बॉट निष्पादन (Execution)
-# ==========================================
-def run_telegram_bot():
-    bot.infinity_polling(skip_pending=True)
-
-threading.Thread(target=run_telegram_bot, daemon=True).start()
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+ 
