@@ -10,7 +10,6 @@ import telebot
 from telebot import types
 from docx import Document
 
-# ReportLab libraries for exact PDF styling
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -25,14 +24,13 @@ OWNER_ID = 8183824919
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# Cron-job.org के लिए 200 OK रिस्पॉन्स
 @app.route('/')
 def home():
     return "OK", 200
 
 
 # ==========================================
-# 2. SQLite डेटाबेस मैनेजमेंट (Persistent Storage)
+# 2. SQLite डेटाबेस मैनेजमेंट
 # ==========================================
 DB_FILE = "quiz_database.db"
 
@@ -107,7 +105,6 @@ def delete_quiz_from_db(quiz_id):
     return deleted
 
 
-# Global State Trackers
 pending_uploads = {}
 leaderboards = {}
 poll_tracker = {}
@@ -120,15 +117,8 @@ group_quiz_messages = {}
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     if message.chat.type == 'private':
-        bot.reply_to(
-            message, 
-            "🏁 **नमस्ते! मैं आपका Multi-Quiz Bot हूँ।**\n\n"
-            "📌 **उपयोग कैसे करें:**\n"
-            "• मुझे कोई भी `.docx` फ़ाइल यहाँ DM में भेजकर क्विज़ सेव करें।\n"
-            "• `/myquizzes` - अपनी सभी सेव की हुई क्विज़ देखें।\n"
-            "• `/deletequiz ID` - कोई क्विज़ डिलीट करें (उदा: `/deletequiz 1`)\n"
-            "• ग्रुप में क्विज़ चलाने के लिए ग्रुप में `/startquiz` लिखें।"
-        )
+        msg = "🏁 **नमस्ते! मैं आपका Multi-Quiz Bot हूँ।**\n\n📌 **उपयोग कैसे करें:**\n• मुझे कोई भी `.docx` फ़ाइल यहाँ DM में भेजकर क्विज़ सेव करें。\n• `/myquizzes` - अपनी सभी सेव की हुई क्विज़ देखें。\n• `/deletequiz ID` - कोई क्विज़ डिलीट करें\n• ग्रुप में क्विज़ चलाने के लिए ग्रुप में `/startquiz` लिखें।"
+        bot.reply_to(message, msg, parse_mode="Markdown")
     else:
         bot.reply_to(message, "नमस्ते! ग्रुप में क्विज़ शुरू करने के लिए ऑनर `/startquiz` लिखें।")
 
@@ -218,15 +208,8 @@ def handle_docs(message):
             btn30 = types.InlineKeyboardButton("⏱️ 30 सेकंड", callback_data="save_timer_30")
             markup.add(btn15, btn20, btn30)
             
-            bot.reply_to(
-                message, 
-                f"📥 **नई फ़ाइल प्राप्त हुई!**\n\n"
-                f"📌 **शीर्षक:** `{title}`\n"
-                f"📊 **कुल प्रश्न:** {len(quizzes)}\n\n"
-                f"⚙️ **इस क्विज़ के लिए प्रति प्रश्न समय सीमा चुनें और सेव करें:**", 
-                reply_markup=markup,
-                parse_mode="Markdown"
-            )
+            upload_msg = f"📥 **नई फ़ाइल प्राप्त हुई!**\n\n📌 **शीर्षक:** `{title}`\n📊 **कुल प्रश्न:** {len(quizzes)}\n\n⚙️ **इस क्विज़ के लिए प्रति प्रश्न समय सीमा चुनें और सेव करें:**"
+            bot.reply_to(message, upload_msg, reply_markup=markup, parse_mode="Markdown")
         else:
             bot.reply_to(message, "❌ केवल `.docx` (Word) फ़ाइल ही भेजें।")
     except Exception as e:
@@ -244,13 +227,9 @@ def save_timer_callback(call):
         data = pending_uploads.pop(OWNER_ID)
         quiz_id = save_quiz_to_db(data['title'], data['quizzes'], timer_val)
         
+        saved_msg = f"✅ **क्विज़ सफलतापूर्वक सेव हो गया!**\n\n🆔 **Quiz ID:** `{quiz_id}`\n📌 **नाम:** `{data['title']}`\n📊 **प्रश्न:** {len(data['quizzes'])}\n⏱️ **समय:** {timer_val} सेकंड प्रति प्रश्न\n\n💡 आप कभी भी इसे चलाने के लिए ग्रुप में `/startquiz` या `/startquiz {quiz_id}` लिखें।"
         bot.edit_message_text(
-            f"✅ **क्विज़ सफलतापूर्वक सेव हो गया!**\n\n"
-            f"🆔 **Quiz ID:** `{quiz_id}`\n"
-            f"📌 **नाम:** `{data['title']}`\n"
-            f"📊 **प्रश्न:** {len(data['quizzes'])}\n"
-            f"⏱️ **समय:** {timer_val} सेकंड प्रति प्रश्न\n\n"
-            f"💡 आप कभी भी इसे चलाने के लिए ग्रुप में `/startquiz` या `/startquiz {quiz_id}` लिखें।",
+            saved_msg,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="Markdown"
@@ -260,7 +239,7 @@ def save_timer_callback(call):
 
 
 # ==========================================
-# 5. क्विज़ प्रबंधन कमांड्स (List & Delete)
+# 5. क्विज़ प्रबंधन कमांड्स
 # ==========================================
 @bot.message_handler(commands=['myquizzes'])
 def list_my_quizzes(message):
@@ -274,8 +253,7 @@ def list_my_quizzes(message):
 
     text = "📚 **आपकी सेव की हुई क्विज़ लिस्ट:**\n\n"
     for q in quizzes:
-        text += f"🔹 **ID {q['id']}:** {q['title']}\n"
-        text += f"   └ 📊 {len(q['questions'])} प्रश्न | ⏱️ {q['timer']} सेकंड\n\n"
+        text += f"🔹 **ID {q['id']}:** {q['title']}\n   └ 📊 {len(q['questions'])} प्रश्न | ⏱️ {q['timer']} सेकंड\n\n"
     
     text += "💡 **डिलीट करने के लिए:** `/deletequiz ID` लिखें।"
     bot.reply_to(message, text, parse_mode="Markdown")
@@ -298,7 +276,7 @@ def delete_quiz_cmd(message):
 
 
 # ==========================================
-# 6. ग्रुप क्विज़ निष्पादन (Group Execution)
+# 6. ग्रुप क्विज़ निष्पादन
 # ==========================================
 @bot.message_handler(commands=['startquiz'])
 def start_quiz_in_group(message):
@@ -335,7 +313,7 @@ def start_quiz_in_group(message):
 
     quizzes = get_all_quizzes()
     if not quizzes:
-        bot.reply_to(message, "📭 कोई सेव्ड क्विज़ नहीं मिला! पहले बॉट के DM में `.docx` फ़ाइल भेजें।")
+        bot.reply_to(message, "📭 कोई सेव्ड क्विज़ नहीं मिला! पहले बॉट के DM में `.docx` फ़ाइल भेजें。")
         return
 
     markup = types.InlineKeyboardMarkup()
@@ -375,15 +353,8 @@ def launch_quiz(chat_id, quiz_data):
     timer_val = quiz_data['timer']
     title = quiz_data['title']
 
-    intro_msg = bot.send_message(
-        chat_id, 
-        f"🏁 **क्विज़ प्रतियोगिता चालू!**\n\n"
-        f"📖 **विषय:** `{title}`\n"
-        f"📊 **कुल प्रश्न:** {len(quizzes)}\n"
-        f"⏱️ **समय:** {timer_val} सेकंड प्रति प्रश्न\n\n"
-        f"5 सेकंड में पहला प्रश्न आ रहा है...",
-        parse_mode="Markdown"
-    )
+    start_text = f"🏁 **क्विज़ प्रतियोगिता चालू!**\n\n📖 **विषय:** `{title}`\n📊 **कुल प्रश्न:** {len(quizzes)}\n⏱️ **समय:** {timer_val} सेकंड प्रति प्रश्न\n\n5 सेकंड में पहला प्रश्न आ रहा है..."
+    intro_msg = bot.send_message(chat_id, start_text, parse_mode="Markdown")
 
     group_quiz_messages[chat_id] = [intro_msg.message_id]
     threading.Thread(target=run_quiz_competition, args=(chat_id, quizzes, timer_val, title)).start()
@@ -588,7 +559,34 @@ def send_final_leaderboard(chat_id, total_questions, title, total_time_spent):
         group_info = bot.get_chat(chat_id)
         pdf_file = generate_pdf_report(group_info.title, title, total_questions, scores, total_time_spent)
         
+        caption_text = f"📊 क्विज़ परिणाम रिपोर्ट\n👥 ग्रुप: {group_info.title}\n📖 विषय: {title}"
         bot.send_document(
             chat_id=OWNER_ID,
             document=('Quiz_Result.pdf', pdf_file, 'application/pdf'),
-            caption=f"📊 **क्विज़ परिणाम रिपोर्ट**\n👥 **ग्रुप:*
+            caption=caption_text
+        )
+    except Exception as e:
+        print(f"DM PDF Error: {e}")
+
+    if chat_id in group_quiz_messages:
+        msg_ids = group_quiz_messages.pop(chat_id)
+        threading.Thread(target=delete_group_quiz_messages, args=(chat_id, msg_ids)).start()
+
+    if chat_id in leaderboards:
+        del leaderboards[chat_id]
+
+
+# ==========================================
+# 9. बैकग्राउंड बॉट पोलिंग थ्रेड
+# ==========================================
+def start_bot():
+    try:
+        bot.infinity_polling(skip_pending=True)
+    except Exception as e:
+        print(f"Bot Polling Error: {e}")
+
+threading.Thread(target=start_bot, daemon=True).start()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
