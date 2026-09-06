@@ -111,7 +111,7 @@ def delete_quiz_from_db(quiz_id):
 pending_uploads = {}
 leaderboards = {}
 poll_tracker = {}
-group_quiz_messages = {}  # केवल ग्रुप मैसेजेस डिलीट करने के लिए Tracker
+group_quiz_messages = {}
 
 
 # ==========================================
@@ -398,7 +398,6 @@ def run_quiz_competition(chat_id, quizzes, timer_val, title):
     for idx, q in enumerate(quizzes, start=1):
         q_text = f"[{idx}/{total_q}] {q['question']}"
         try:
-            # Explanation में मांगी गई लाइन
             poll_msg = bot.send_poll(
                 chat_id=chat_id,
                 question=q_text[:300],
@@ -410,7 +409,6 @@ def run_quiz_competition(chat_id, quizzes, timer_val, title):
                 is_anonymous=False
             )
             
-            # ऑटो-डिलीट के लिए केवल इस ग्रुप मैसेजेस की ID रिकॉर्ड करें
             if chat_id in group_quiz_messages:
                 group_quiz_messages[chat_id].append(poll_msg.message_id)
             
@@ -460,7 +458,7 @@ def handle_poll_answer(poll_answer):
 
 
 # ==========================================
-# 7. PDF रिपब्लिक जेनरेशन (Exact Layout & Colors)
+# 7. PDF जेनरेशन
 # ==========================================
 def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
     buffer = io.BytesIO()
@@ -476,7 +474,6 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
     
     styles = getSampleStyleSheet()
     
-    # Exact Headers matching sample PDF[cite: 1]
     title_style = ParagraphStyle(
         'HeaderTitle',
         parent=styles['Heading1'],
@@ -500,7 +497,6 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
     story.append(Paragraph("॥ करह बिहारी सरकार की जय ॥", title_style))
     story.append(Paragraph("CONSOLIDATED TEST RESULT & RANK LIST", sub_title_style))
     
-    # Header Details Section[cite: 1]
     meta_data = [
         [f"Test Name:\n{title}", f"Total Candidates:\n{len(scores)} Students"],
         [f"Max Marks:\n{total_q * 2.0:.1f} Marks ({total_q} Qs)", "Negative Marking:\n1/4 (0.25)"]
@@ -515,7 +511,6 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
     story.append(meta_table)
     story.append(Spacer(1, 10))
     
-    # Exact Columns from reference PDF[cite: 1]
     table_data = [[
         'Rank', 'Roll No / ID', 'Student Name', 'Attempted', 
         'Correct', 'Wrong', 'Neg. Marks (1/4)', 'Total Score', 'Percentile', 'Time Spent'
@@ -551,10 +546,9 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
             time_str
         ])
         
-    # PDF Table Styling matching sample colors (Dark Blue Header + Alternating Rows)[cite: 1]
     result_table = Table(table_data, colWidths=[32, 72, 95, 52, 42, 40, 70, 58, 55, 52])
     result_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002B49')), # Dark Blue Header
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002B49')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('FONTSIZE', (0,0), (-1,-1), 7.5),
@@ -572,10 +566,10 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
 
 
 # ==========================================
-# 8. ऑटो-डिलीट (केवल ग्रुप से) और रिजल्ट भेजना
+# 8. ऑटो-डिलीट और रिजल्ट मैनेजमेंट
 # ==========================================
 def delete_group_quiz_messages(chat_id, message_ids):
-    time.sleep(60)  # क्विज़ समाप्त होने के ठीक 60 सेकंड बाद
+    time.sleep(60)
     for msg_id in message_ids:
         try:
             bot.delete_message(chat_id, msg_id)
@@ -585,4 +579,16 @@ def delete_group_quiz_messages(chat_id, message_ids):
 def send_final_leaderboard(chat_id, total_questions, title, total_time_spent):
     scores = leaderboards.get(chat_id, {})
     
- 
+    try:
+        bot.send_message(chat_id, "करह बिहारी सरकार की जय")
+    except Exception as e:
+        print(f"Group Message Error: {e}")
+
+    try:
+        group_info = bot.get_chat(chat_id)
+        pdf_file = generate_pdf_report(group_info.title, title, total_questions, scores, total_time_spent)
+        
+        bot.send_document(
+            chat_id=OWNER_ID,
+            document=('Quiz_Result.pdf', pdf_file, 'application/pdf'),
+            caption=f"📊 **क्विज़ परिणाम रिपोर्ट**\n👥 **ग्रुप:*
