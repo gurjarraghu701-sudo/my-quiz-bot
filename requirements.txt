@@ -1,5 +1,5 @@
 pyTelegramBotAPI
-python-docx
 Flask
-reportlab
+python-docx
+weasyprint
 gunicorn
