@@ -12,10 +12,10 @@ from docx import Document
 from weasyprint import HTML
 
 # ==========================================
-# 1. कॉन्फ़िगरेशन एवं सुरक्षा (Security)
+# 1. कॉन्फ़िगरेशन एवं सुरक्षा (Environment Variables)
 # ==========================================
 TOKEN = os.environ.get("BOT_TOKEN")
-OWNER_ID = 8183824919 
+OWNER_ID = int(os.environ.get("OWNER_ID", "1234567890"))  # 🔒 सुरक्षित Environment Variable से लोड
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -113,7 +113,7 @@ group_quiz_messages = {}
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     if message.chat.type == 'private':
-        msg = "🏁 **नमस्ते! मैं आपका Multi-Quiz Bot हूँ।**\n\n📌 **उपयोग कैसे करें:**\n• मुझे कोई भी `.docx` फ़ाइल यहाँ DM में भेजकर क्विज़ सेव करें。\n• `/myquizzes` - अपनी सभी सेव की हुई क्विज़ देखें。\n• `/deletequiz ID` - कोई क्विज़ डिलीट करें\n• ग्रुप में क्विज़ चलाने के लिए ग्रुप में `/startquiz` लिखें।"
+        msg = "🏁 **नमस्ते! मैं आपका Multi-Quiz Bot हूँ।**\n\n📌 **उपयोग कैसे करें:**\n• मुझे कोई भी `.docx` फ़ाइल यहाँ DM में भेजकर क्विज़ सेव करें।\n• `/myquizzes` - अपनी सभी सेव की हुई क्विज़ देखें।\n• `/deletequiz ID` - कोई क्विज़ डिलीट करें\n• ग्रुप में क्विज़ चलाने के लिए ग्रुप में `/startquiz` लिखें।"
         bot.reply_to(message, msg, parse_mode="Markdown")
     else:
         bot.reply_to(message, "नमस्ते! ग्रुप में क्विज़ शुरू करने के लिए ऑनर `/startquiz` लिखें।")
@@ -272,7 +272,7 @@ def delete_quiz_cmd(message):
 
 
 # ==========================================
-# 6. ग्रुप क्विज़ निष्पादन
+# 6. ग्रुप क्विज़ निष्पादक
 # ==========================================
 @bot.message_handler(commands=['startquiz'])
 def start_quiz_in_group(message):
@@ -371,7 +371,7 @@ def run_quiz_competition(chat_id, quizzes, timer_val, title):
                 options=q['options'],
                 type='quiz',
                 correct_option_id=q['correct_id'],
-                explanation="करह बिहारी सरकार की जय 🙏",
+                explanation="Jai Karah Bihari Sarkar 🙏",
                 open_period=timer_val,
                 is_anonymous=False
             )
@@ -425,7 +425,7 @@ def handle_poll_answer(poll_answer):
 
 
 # ==========================================
-# 7. WEASYPRINT HTML PDF GENERATION
+# 7. WEASYPRINT HTML PDF GENERATION (Calligraphy Banner)
 # ==========================================
 def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
     sorted_scores = sorted(
@@ -474,11 +474,13 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
                 </tr>"""
 
     html_content = f"""<!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Consolidated Test Series Result Sheet</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
+
         @page {{
             size: A4 landscape;
             margin: 10mm 12mm;
@@ -500,34 +502,37 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
 
         .calligraphy-banner {{
             text-align: center;
-            background: linear-gradient(90deg, #fff7ed, #ffedd5, #fff7ed);
-            border: 2px solid #f97316;
+            background: linear-gradient(90deg, #fff7ed, #ffedd5, #fef3c7, #ffedd5, #fff7ed);
+            border: 2px solid #d97706;
             border-radius: 8px;
-            padding: 10px 15px;
+            padding: 8px 15px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.06);
         }}
 
         .calligraphy-text {{
-            font-size: 22pt;
-            font-weight: bold;
-            color: #c2410c;
-            letter-spacing: 2px;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+            font-family: 'Great Vibes', 'Times New Roman', cursive, serif;
+            font-size: 32pt;
+            font-weight: normal;
+            color: #b45309;
+            letter-spacing: 1.5px;
             margin: 0;
             display: inline-block;
+            vertical-align: middle;
+            line-height: 1.1;
         }}
 
         .decor-symbol {{
-            color: #d97706;
-            font-size: 18pt;
-            margin: 0 10px;
+            color: #ea580c;
+            font-size: 16pt;
+            margin: 0 15px;
+            vertical-align: middle;
         }}
 
         .header {{
             background: linear-gradient(135deg, #1e3a8a, #2563eb);
             color: #ffffff;
-            padding: 14px 18px;
+            padding: 12px 18px;
             border-radius: 6px;
             margin-bottom: 12px;
         }}
@@ -538,7 +543,7 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
         }}
 
         .header-title {{
-            font-size: 16pt;
+            font-size: 15pt;
             font-weight: bold;
             margin: 0;
         }}
@@ -641,7 +646,7 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
 
     <div class="calligraphy-banner">
         <span class="decor-symbol">🚩</span>
-        <span class="calligraphy-text">॥ करह बिहारी सरकार की जय ॥</span>
+        <span class="calligraphy-text">Jai Karah Bihari Sarkar</span>
         <span class="decor-symbol">🚩</span>
     </div>
 
@@ -712,10 +717,10 @@ def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
 
 
 # ==========================================
-# 8. ऑटो-डिलीट (5 Sec) और परिणाम प्रबंधन
+# 8. ऑटो-डिलीट (1 Sec) और परिणाम प्रबंधन
 # ==========================================
 def delete_group_quiz_messages(chat_id, message_ids):
-    time.sleep(5)
+    time.sleep(1)  # ⏱️ 1 सेकंड में प्रश्न और संदेश डिलीट होंगे
     for msg_id in message_ids:
         try:
             bot.delete_message(chat_id, msg_id)
@@ -729,14 +734,13 @@ def send_final_leaderboard(chat_id, total_questions, title, total_time_spent):
         group_info = bot.get_chat(chat_id)
         pdf_file = generate_pdf_report(group_info.title, title, total_questions, scores, total_time_spent)
         
-        caption_text = f"📊 क्विज़ परिणाम रिपोर्ट\n👥 ग्रुप: {group_info.title}\n📖 विषय: {title}"
+        # 🎯 PDF सीधे बिना किसी कैप्शन/टेक्स्ट मैसेज के जाएगी
         bot.send_document(
-            chat_id=OWNER_ID,
-            document=('Quiz_Result.pdf', pdf_file, 'application/pdf'),
-            caption=caption_text
+            chat_id=chat_id,
+            document=('Quiz_Result.pdf', pdf_file, 'application/pdf')
         )
     except Exception as e:
-        print(f"DM PDF Error: {e}")
+        print(f"Group PDF Send Error: {e}")
 
     if chat_id in group_quiz_messages:
         msg_ids = group_quiz_messages.pop(chat_id)
@@ -759,4 +763,4 @@ threading.Thread(target=start_bot, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)          
