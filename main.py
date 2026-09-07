@@ -9,17 +9,13 @@ from flask import Flask
 import telebot
 from telebot import types
 from docx import Document
-
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from weasyprint import HTML
 
 # ==========================================
 # 1. कॉन्फ़िगरेशन एवं सुरक्षा (Security)
 # ==========================================
 TOKEN = os.environ.get("BOT_TOKEN")
-OWNER_ID = 8183824919
+OWNER_ID = 8183824919 
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -313,7 +309,7 @@ def start_quiz_in_group(message):
 
     quizzes = get_all_quizzes()
     if not quizzes:
-        bot.reply_to(message, "📭 कोई सेव्ड क्विज़ नहीं मिला! पहले बॉट के DM में `.docx` फ़ाइल भेजें。")
+        bot.reply_to(message, "📭 कोई सेव्ड क्विज़ नहीं मिला! पहले बॉट के DM में `.docx` फ़ाइल भेजें।")
         return
 
     markup = types.InlineKeyboardMarkup()
@@ -429,118 +425,297 @@ def handle_poll_answer(poll_answer):
 
 
 # ==========================================
-# 7. PDF जेनरेशन
+# 7. WEASYPRINT HTML PDF GENERATION
 # ==========================================
 def generate_pdf_report(group_name, title, total_q, scores, total_time_spent):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=A4, 
-        rightMargin=15, 
-        leftMargin=15, 
-        topMargin=20, 
-        bottomMargin=20
-    )
-    story = []
-    
-    styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle(
-        'HeaderTitle',
-        parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=15,
-        alignment=1,
-        textColor=colors.HexColor('#8B0000'),
-        spaceAfter=4
-    )
-    
-    sub_title_style = ParagraphStyle(
-        'SubHeaderTitle',
-        parent=styles['Heading2'],
-        fontName='Helvetica-Bold',
-        fontSize=11,
-        alignment=1,
-        textColor=colors.HexColor('#0A2540'),
-        spaceAfter=12
-    )
-
-    story.append(Paragraph("॥ करह बिहारी सरकार की जय ॥", title_style))
-    story.append(Paragraph("CONSOLIDATED TEST RESULT & RANK LIST", sub_title_style))
-    
-    meta_data = [
-        [f"Test Name:\n{title}", f"Total Candidates:\n{len(scores)} Students"],
-        [f"Max Marks:\n{total_q * 2.0:.1f} Marks ({total_q} Qs)", "Negative Marking:\n1/4 (0.25)"]
-    ]
-    meta_table = Table(meta_data, colWidths=[280, 280])
-    meta_table.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 8.5),
-        ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#1A1A1A')),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-    ]))
-    story.append(meta_table)
-    story.append(Spacer(1, 10))
-    
-    table_data = [[
-        'Rank', 'Roll No / ID', 'Student Name', 'Attempted', 
-        'Correct', 'Wrong', 'Neg. Marks (1/4)', 'Total Score', 'Percentile', 'Time Spent'
-    ]]
-    
     sorted_scores = sorted(
         scores.values(), 
-        key=lambda x: (x['correct'] * 2.0) - (x['wrong'] * 0.5), 
+        key=lambda x: (x['correct'] * 1.0) - (x['wrong'] * 0.25), 
         reverse=True
     )
     
     total_candidates = len(sorted_scores) if len(sorted_scores) > 0 else 1
+    highest_score_val = (sorted_scores[0]['correct'] * 1.0 - sorted_scores[0]['wrong'] * 0.25) if sorted_scores else 0.0
+    max_marks_val = total_q * 1.0
     time_str = f"{total_time_spent // 60}m {total_time_spent % 60:02d}s"
-    
+
+    rows_html = ""
     for rank, p in enumerate(sorted_scores, start=1):
         attempted = p['attempted']
         correct = p['correct']
         wrong = p['wrong']
-        neg_marks = wrong * 0.5
-        total_score = (correct * 2.0) - neg_marks
+        neg_marks = wrong * 0.25
+        total_score = (correct * 1.0) - neg_marks
         percentile = round(((total_candidates - rank + 1) / total_candidates) * 100, 2)
-        
-        table_data.append([
-            str(rank),
-            f"STU-2026-{rank:03d}",
-            p['name'][:18],
-            str(attempted),
-            str(correct),
-            str(wrong),
-            f"-{neg_marks:.2f}",
-            f"{total_score:.2f}",
-            f"{percentile:.2f}%",
-            time_str
-        ])
-        
-    result_table = Table(table_data, colWidths=[32, 72, 95, 52, 42, 40, 70, 58, 55, 52])
-    result_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002B49')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 7.5),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('GRID', (0,0), (-1,-1), 0.4, colors.HexColor('#D3D3D3')),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8F9FA')])
-    ]))
-    
-    story.append(result_table)
-    doc.build(story)
-    
+        name = p['name'][:25]
+
+        if rank <= 3:
+            tr_class = ' class="rank-top"'
+            rank_html = f'<span class="rank-badge top-{rank}">{rank}</span>'
+            name_class = ' class="text-left text-bold"'
+            score_style = ' style="font-size: 9.5pt;"'
+        else:
+            tr_class = ''
+            rank_html = f'<strong>{rank}</strong>'
+            name_class = ' class="text-left"'
+            score_style = ''
+
+        rows_html += f"""
+                <tr{tr_class}>
+                    <td>{rank_html}</td>
+                    <td{name_class}>{name}</td>
+                    <td>{attempted}</td>
+                    <td>{correct}</td>
+                    <td>{wrong}</td>
+                    <td class="text-danger">-{neg_marks:.2f}</td>
+                    <td class="text-primary"{score_style}>{total_score:.2f}</td>
+                    <td>{percentile:.2f} %</td>
+                    <td>{time_str}</td>
+                </tr>"""
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <title>Consolidated Test Series Result Sheet</title>
+    <style>
+        @page {{
+            size: A4 landscape;
+            margin: 10mm 12mm;
+            background-color: #f8fafc;
+        }}
+
+        * {{
+            box-sizing: border-box;
+            font-family: 'DejaVu Sans', sans-serif;
+        }}
+
+        body {{
+            margin: 0;
+            padding: 0;
+            color: #1e293b;
+            font-size: 9pt;
+            line-height: 1.4;
+        }}
+
+        .calligraphy-banner {{
+            text-align: center;
+            background: linear-gradient(90deg, #fff7ed, #ffedd5, #fff7ed);
+            border: 2px solid #f97316;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }}
+
+        .calligraphy-text {{
+            font-size: 22pt;
+            font-weight: bold;
+            color: #c2410c;
+            letter-spacing: 2px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+            margin: 0;
+            display: inline-block;
+        }}
+
+        .decor-symbol {{
+            color: #d97706;
+            font-size: 18pt;
+            margin: 0 10px;
+        }}
+
+        .header {{
+            background: linear-gradient(135deg, #1e3a8a, #2563eb);
+            color: #ffffff;
+            padding: 14px 18px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }}
+
+        .header table {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+
+        .header-title {{
+            font-size: 16pt;
+            font-weight: bold;
+            margin: 0;
+        }}
+
+        .badge-info {{
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 8.5pt;
+            display: inline-block;
+        }}
+
+        .summary-bar {{
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 8px 14px;
+            margin-bottom: 12px;
+        }}
+
+        .summary-bar table {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+
+        .summary-item {{
+            font-size: 8.5pt;
+            color: #475569;
+        }}
+
+        .summary-value {{
+            font-size: 9.5pt;
+            font-weight: bold;
+            color: #0f172a;
+        }}
+
+        .table-container {{
+            background: #ffffff;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            overflow: hidden;
+        }}
+
+        table.result-table {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+
+        table.result-table th {{
+            background-color: #1e3a8a;
+            color: #ffffff;
+            font-size: 8.5pt;
+            font-weight: bold;
+            text-align: center;
+            padding: 8px 6px;
+            border: 1px solid #1d4ed8;
+        }}
+
+        table.result-table td {{
+            padding: 7px 6px;
+            border-bottom: 1px solid #e2e8f0;
+            border-right: 1px solid #f1f5f9;
+            font-size: 8.5pt;
+            text-align: center;
+        }}
+
+        table.result-table tr:nth-child(even) {{
+            background-color: #f8fafc;
+        }}
+
+        .rank-top {{
+            font-weight: bold;
+            color: #b45309;
+            background-color: #fef3c7 !important;
+        }}
+
+        .rank-badge {{
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            border-radius: 50%;
+            background-color: #2563eb;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 8pt;
+        }}
+
+        .rank-badge.top-1 {{ background-color: #d97706; }}
+        .rank-badge.top-2 {{ background-color: #64748b; }}
+        .rank-badge.top-3 {{ background-color: #b45309; }}
+
+        .text-left {{ text-align: left !important; padding-left: 12px !important; }}
+        .text-bold {{ font-weight: bold; }}
+        .text-danger {{ color: #b91c1c; }}
+        .text-primary {{ color: #1d4ed8; font-weight: bold; }}
+    </style>
+</head>
+<body>
+
+    <div class="calligraphy-banner">
+        <span class="decor-symbol">🚩</span>
+        <span class="calligraphy-text">॥ करह बिहारी सरकार की जय ॥</span>
+        <span class="decor-symbol">🚩</span>
+    </div>
+
+    <div class="header">
+        <table>
+            <tr>
+                <td>
+                    <div class="header-title">CONSOLIDATED TEST RESULT & RANK LIST</div>
+                </td>
+                <td style="text-align: right;">
+                    <div class="badge-info">Negative Marking: <strong>1/4 (0.25)</strong></div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="summary-bar">
+        <table>
+            <tr>
+                <td width="25%">
+                    <span class="summary-item">Test Name:</span> <br>
+                    <span class="summary-value">{title}</span>
+                </td>
+                <td width="25%">
+                    <span class="summary-item">Total Candidates:</span> <br>
+                    <span class="summary-value">{len(scores)} Students</span>
+                </td>
+                <td width="25%">
+                    <span class="summary-item">Max Marks:</span> <br>
+                    <span class="summary-value">{max_marks_val:.1f} Marks ({total_q} Qs)</span>
+                </td>
+                <td width="25%">
+                    <span class="summary-item">Highest Score:</span> <br>
+                    <span class="summary-value" style="color: #15803d;">{highest_score_val:.2f} / {max_marks_val:.0f}</span>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="table-container">
+        <table class="result-table">
+            <thead>
+                <tr>
+                    <th width="7%">Rank</th>
+                    <th width="25%" class="text-left">Student Name</th>
+                    <th width="9%">Attempted</th>
+                    <th width="9%">Correct</th>
+                    <th width="9%">Wrong</th>
+                    <th width="11%">Neg. Marks (1/4)</th>
+                    <th width="11%">Total Score</th>
+                    <th width="9%">Percentile</th>
+                    <th width="10%">Time Spent</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>"""
+
+    buffer = io.BytesIO()
+    HTML(string=html_content).write_pdf(target=buffer)
     buffer.seek(0)
     return buffer
 
 
 # ==========================================
-# 8. ऑटो-डिलीट और रिजल्ट मैनेजमेंट
+# 8. ऑटो-डिलीट (5 Sec) और परिणाम प्रबंधन
 # ==========================================
 def delete_group_quiz_messages(chat_id, message_ids):
-    time.sleep(60)
+    time.sleep(5)
     for msg_id in message_ids:
         try:
             bot.delete_message(chat_id, msg_id)
@@ -549,11 +724,6 @@ def delete_group_quiz_messages(chat_id, message_ids):
 
 def send_final_leaderboard(chat_id, total_questions, title, total_time_spent):
     scores = leaderboards.get(chat_id, {})
-    
-    try:
-        bot.send_message(chat_id, "करह बिहारी सरकार की जय")
-    except Exception as e:
-        print(f"Group Message Error: {e}")
 
     try:
         group_info = bot.get_chat(chat_id)
